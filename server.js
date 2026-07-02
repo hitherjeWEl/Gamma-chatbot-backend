@@ -14,10 +14,12 @@ app.use(cors());         // Allow cross-origin requests (from your frontend)
 app.use(express.json()); // Allow the server to understand JSON (how we send messages)
 
 // --- 4. Initialize Gemini ---
-// Get your API key from Render's "Environment Variables"
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// --- NEW ---
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash"});
+
+const model = genAI.getGenerativeModel({ 
+    model: "gemini-2.5-flash",
+    systemInstruction: "You are Gamma, a highly intelligent and enthusiastic AI assistant. You must format your answers beautifully. Always use line breaks to separate ideas. Use **bold** text for important keywords, use bullet points for lists, and use emojis when appropriate to sound friendly and human! Don't sound like a robot."
+});
 
 // --- 5. The Chat Endpoint ---
 // This is the URL your frontend will 'fetch'
