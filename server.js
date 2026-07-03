@@ -16,7 +16,7 @@ const systemPrompt = "You are Gamma, a highly intelligent AI assistant. You MUST
 
 // UPGRADED TO YOUR REQUESTED MODEL
 const coreModel = genAI.getGenerativeModel({ 
-    model: "gemini-3.1-flash", 
+    model: "gemini-2.5-flash", 
     systemInstruction: systemPrompt 
 });
 
