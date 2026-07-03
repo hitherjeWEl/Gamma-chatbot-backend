@@ -1,105 +1,68 @@
-// --- 1. Load all the tools we need ---
 const express = require('express');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const dotenv = require('dotenv');
 const cors = require('cors');
 
-// --- 2. Setup ---
 dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-// --- 3. Middleware ---
 app.use(cors());
-// Increased the JSON limit to 50mb to allow for large image uploads later
-app.use(express.json({ limit: '50mb' })); 
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// --- 4. Initialize Gemini & Setup 3 Brains ---
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const systemPrompt = "You are Gamma, a highly intelligent AI. Structure answers with Markdown. Use ### for headers, use bullets, and bold keywords. Generate Mermaid diagrams if asked.";
+const systemPrompt = "You are Gamma, a highly intelligent AI assistant. You MUST structure answers using Markdown. Use ### for headers, bullet points, and bold text. CRITICAL: If asked for a diagram or flowchart, output valid Mermaid.js syntax inside a ```mermaid code block.";
 
-// Brain 1: Normal Text 
-const textModel = genAI.getGenerativeModel({ 
-    model: "gemini-3.1-flash-lite", 
+// UPGRADED TO YOUR REQUESTED MODEL
+const coreModel = genAI.getGenerativeModel({ 
+    model: "gemini-3.1-flash-tts", 
     systemInstruction: systemPrompt 
 });
 
-// Brain 2: Deep Research & Image Processing 
-const researchModel = genAI.getGenerativeModel({ 
-    model: "gemma-4-31b", 
-    systemInstruction: systemPrompt 
-});
-
-// Brain 3: Speech & Live Talking 
-const audioModel = genAI.getGenerativeModel({ 
-    model: "gemini-3-flash-live", 
-    systemInstruction: systemPrompt 
-});
-
-// --- 5. The Chat Endpoint (The Router) ---
 app.post('/chat', async (req, res) => {
     try {
-        // The frontend will pass these flags to tell the server what to do
-        const { message, useVoice, useResearch, imageData } = req.body;
+        const { message, useVoice, imageData } = req.body;
 
         if (!message && !imageData) {
-            return res.status(400).json({ reply: 'No message or image provided.' });
+            return res.status(400).json({ reply: 'Please provide a message or an image.' });
         }
+
+        const promptParts = [];
+
+        if (imageData && imageData.base64 && imageData.mimeType) {
+            promptParts.push({ inlineData: { data: imageData.base64, mimeType: imageData.mimeType } });
+        }
+        promptParts.push({ text: message || "Analyze the uploaded content." });
 
         let aiReply = "";
         let audioBase64 = null;
 
-        // ROUTE 1: Speech / Live Talking
         if (useVoice) {
-            const request = {
-                contents: [{ role: 'user', parts: [{ text: message }] }],
+            const audioRequest = {
+                contents: [{ role: 'user', parts: promptParts }],
                 generationConfig: {
                     responseModalities: ["TEXT", "AUDIO"],
                     speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
                 }
             };
-            const result = await audioModel.generateContent(request);
+            const result = await coreModel.generateContent(audioRequest);
             aiReply = result.response.text();
-            
+
             const parts = result.response.candidates[0].content.parts;
             const audioPart = parts.find(p => p.inlineData && p.inlineData.mimeType.startsWith('audio/'));
             if (audioPart) audioBase64 = audioPart.inlineData.data;
-        } 
-        
-        // ROUTE 2: Deep Research / Image Processing
-        else if (useResearch || imageData) {
-            const parts = [{ text: message || "Analyze this image." }];
-            
-            // If the user uploaded an image, attach it to the prompt
-            if (imageData) {
-                parts.push({
-                    inlineData: {
-                        data: imageData.base64,
-                        mimeType: imageData.mimeType
-                    }
-                });
-            }
-
-            const result = await researchModel.generateContent(parts);
-            aiReply = result.response.text();
-        } 
-        
-        // ROUTE 3: Normal Fast Text Output (Default)
-        else {
-            const result = await textModel.generateContent(message);
+        } else {
+            const result = await coreModel.generateContent(promptParts);
             aiReply = result.response.text();
         }
 
-        // Send the final data back to the frontend
         res.json({ reply: aiReply, audio: audioBase64 });
 
     } catch (error) {
-        console.error('AI Error:', error);
-        res.status(500).json({ reply: 'Error communicating with AI. Check Render logs.' });
+        console.error('Backend Processing Error:', error);
+        res.status(500).json({ reply: 'Transmission error.', error: error.message });
     }
 });
 
-// --- 6. Start the Server ---
-app.listen(port, () => {
-    console.log(`Server is listening on port ${port}`);
-});
+app.listen(port, () => console.log(`Gamma Backend Service live on port ${port}`));
