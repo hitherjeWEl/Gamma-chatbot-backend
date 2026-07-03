@@ -13,12 +13,65 @@ const port = process.env.PORT || 3000; // Render will tell us what port to use
 app.use(cors());         // Allow cross-origin requests (from your frontend)
 app.use(express.json()); // Allow the server to understand JSON (how we send messages)
 
-// --- 4. Initialize Gemini ---
+// --- 4. Initialize Gemini (TWO MODELS NOW) ---
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.5-flash",
-    systemInstruction: "You are Gamma, a highly intelligent and engaging AI. You MUST structure your answers clearly using Markdown. Always follow this format: 1) Start with a clear, capitalized Header using ###. 2) Write a short paragraph explaining the concept. 3) Use bullet points for examples. 4) Highlight keywords in **bold**. CRITICAL: If the user asks for a diagram, flowchart, or visual representation, you MUST generate it using Mermaid.js syntax inside a ```mermaid code block. Do not apologize for not being able to draw; just provide the Mermaid code."
+const systemPrompt = "You are Gamma, a highly intelligent AI. Structure answers with Markdown. Use ### for headers, use bullets, and bold keywords. Generate Mermaid diagrams if asked.";
+
+// Brain 1: The Fast Text Model
+const textModel = genAI.getGenerativeModel({ 
+    model: "gemini-2.5-flash", 
+    systemInstruction: systemPrompt 
+});
+
+// Brain 2: The Audio/Voice Model
+const audioModel = genAI.getGenerativeModel({ 
+    model: "gemini-2.0-flash-exp", 
+    systemInstruction: systemPrompt 
+});
+
+// --- 5. The Chat Endpoint ---
+app.post('/chat', async (req, res) => {
+    try {
+        // We now expect the frontend to send a 'useVoice' boolean!
+        const { message, useVoice } = req.body;
+
+        if (!message) {
+            return res.status(400).json({ reply: 'No message provided.' });
+        }
+
+        let aiReply = "";
+        let audioBase64 = null;
+
+        // ROUTE 1: The user wants audio
+        if (useVoice) {
+            const request = {
+                contents: [{ role: 'user', parts: [{ text: message }] }],
+                generationConfig: {
+                    responseModalities: ["TEXT", "AUDIO"],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
+                }
+            };
+            const result = await audioModel.generateContent(request);
+            aiReply = result.response.text();
+            
+            const parts = result.response.candidates[0].content.parts;
+            const audioPart = parts.find(p => p.inlineData && p.inlineData.mimeType.startsWith('audio/'));
+            if (audioPart) audioBase64 = audioPart.inlineData.data;
+        } 
+        // ROUTE 2: Normal, fast text chat
+        else {
+            const result = await textModel.generateContent(message);
+            aiReply = result.response.text();
+        }
+
+        // Send the data back
+        res.json({ reply: aiReply, audio: audioBase64 });
+
+    } catch (error) {
+        console.error('AI Error:', error);
+        res.status(500).json({ reply: 'Error communicating with AI.' });
+    }
 });
 
 // --- 5. The Chat Endpoint ---
