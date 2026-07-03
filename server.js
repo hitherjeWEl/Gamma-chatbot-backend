@@ -22,23 +22,50 @@ const model = genAI.getGenerativeModel({
 });
 
 // --- 5. The Chat Endpoint ---
-// This is the URL your frontend will 'fetch'
 app.post('/chat', async (req, res) => {
     try {
-        // Get the user's message from the frontend's request
         const userMessage = req.body.message;
 
         if (!userMessage) {
             return res.status(400).json({ reply: 'No message provided.' });
         }
 
-        // Send the message to Gemini
-        const result = await model.generateContent(userMessage);
+        // We ask Gemini for TEXT and AUDIO, and choose a voice!
+        // Voice options: "Puck", "Aoede", "Charon", "Kore", "Fenrir"
+        const request = {
+            contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+            generationConfig: {
+                responseModalities: ["TEXT", "AUDIO"],
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: {
+                            voiceName: "Aoede" // A clear, natural voice
+                        }
+                    }
+                }
+            }
+        };
+
+        const result = await model.generateContent(request);
         const response = await result.response;
+        
+        // Extract the text
         const aiReply = response.text();
 
-        // Send the AI's reply back to the frontend
-        res.json({ reply: aiReply });
+        // Extract the audio data (it comes back as a base64 text string)
+        let audioBase64 = null;
+        const parts = response.candidates[0].content.parts;
+        const audioPart = parts.find(part => part.inlineData && part.inlineData.mimeType.startsWith('audio/'));
+        
+        if (audioPart) {
+            audioBase64 = audioPart.inlineData.data;
+        }
+
+        // Send BOTH the text and the audio back to your website
+        res.json({ 
+            reply: aiReply,
+            audio: audioBase64 
+        });
 
     } catch (error) {
         console.error('AI Error:', error);
